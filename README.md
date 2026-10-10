@@ -4,10 +4,14 @@ Cooperative multi-agent exploration on grid worlds under a normalised communicat
 
 ## Authors
 
-- **Govindu Srimaan** (23110121) — full implementation (MAPPO, differentiable communication bottleneck with VQ, Lagrangian budget gate, vectorised environment, evaluation pipeline)
+- **Govindu Srimaan** (23110121) 
 - Maru Jainil (23110200)
 - Manavi (24110193)
 - Priyanka (24110278)
+
+## Tasks
+
+-full implementation (MAPPO, differentiable communication bottleneck with VQ, Lagrangian budget gate, vectorised environment, evaluation pipeline)
 
 ## Research question
 
