@@ -1,7 +1,5 @@
 # Communication-Constrained Multi-Agent Exploration
 
-**PRIME AI · Team 37 · 7th Semester**
-
 Cooperative multi-agent exploration on grid worlds under a normalised communication budget β.
 
 ## Authors
