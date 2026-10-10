@@ -1,0 +1,20 @@
+# Main experiment: β sweep from 0 to 1
+
+defaults:
+  - base
+  - _self_
+
+num_envs: 64
+num_updates: 500
+run_dir: "runs/budget_sweep"
+
+grid_size: 20
+num_agents: 4
+fov_size: 5
+max_steps: 128
+
+actor_hidden: 64
+critic_hidden: 256
+
+# Hydra multirun: sweep over β values
+beta: 0.25
