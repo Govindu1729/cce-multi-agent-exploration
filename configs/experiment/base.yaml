@@ -1,0 +1,92 @@
+# @package _global_
+
+# Base experiment configuration for FAI project
+
+# Experiment metadata
+experiment:
+  name: "base_experiment"
+  description: "Base configuration for multi-agent coverage experiments"
+  tags: ["base"]
+  
+  # Training
+  num_episodes: 1000
+  max_steps: 50
+  eval_interval: 50
+  num_eval_episodes: 20
+  
+  # Random seed
+  seed: 42
+
+# Environment configuration
+env:
+  grid_size: 10
+  num_agents: 4
+  fov_radius: 2
+  max_steps: 50
+  seed: ${experiment.seed}
+  
+  # Legacy (backward compat)
+  comm_budget: 10
+  comm_range: 3
+
+# Communication constraints (decoupled)
+comm:
+  max_dm: 4                    # Message dimension in bits
+  comm_frequency: 1.0          # Send every N steps (1.0 = every step)
+  topology: "fully_connected"  # Topology type
+  max_tokens: 10               # Total token budget
+  tokens_per_send: 1           # Tokens per send action
+  comm_range: 3                # Range for nearest_neighbor topology
+
+# Agent configuration (MAPPO)
+agent:
+  hidden_dim: 128
+  num_layers: 2
+  lr: 3e-4
+  gamma: 0.99
+  gae_lambda: 0.95
+  clip_eps: 0.2
+  entropy_coef: 0.01
+  value_coef: 0.5
+  max_grad_norm: 0.5
+  
+  # Network architecture
+  use_rnn: false
+  rnn_hidden_dim: 64
+  use_vq: false
+  vq_embed_dim: 64
+  vq_num_codes: 128
+
+# Training configuration
+training:
+  batch_size: 256
+  minibatch_size: 64
+  ppo_epochs: 4
+  num_workers: 4
+  device: "cuda"
+
+# Logging configuration
+logging:
+  use_wandb: false
+  wandb_project: "fai-coverage"
+  wandb_entity: null
+  log_interval: 10
+  save_checkpoints: true
+  checkpoint_interval: 100
+  log_dir: "logs"
+
+# Evaluation configuration
+eval:
+  num_episodes: 20
+  deterministic: true
+  render: false
+
+# Hydra configuration
+hydra:
+  run:
+    dir: "outputs/${experiment.name}/${now:%Y-%m-%d_%H-%M-%S}"
+  job:
+    chdir: true
+  sweep:
+    dir: "multirun/${experiment.name}/${now:%Y-%m-%d_%H-%M-%S}"
+    subdir: "${hydra.job.override_dirname}"

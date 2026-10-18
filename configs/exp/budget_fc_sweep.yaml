@@ -1,0 +1,31 @@
+# @package _global_
+
+# Budget frequency sweep: Fix dm=4, topology=fully_connected, sweep frequency
+# frequency ∈ {0.1, 0.25, 0.5, 1.0}
+
+defaults:
+  - /experiment/base
+
+# Sweep over communication frequency
+freq_values: [0.1, 0.25, 0.5, 1.0]
+
+# Hydra multirun configuration
+hydra:
+  sweeper:
+    params:
+      comm.comm_frequency: ${freq_values}
+  mode: MULTIRUN
+
+# Override fixed parameters
+comm:
+  max_dm: 4
+  topology: "fully_connected"
+  max_tokens: 10
+  tokens_per_send: 1
+  comm_range: 3
+
+# Experiment config
+experiment:
+  name: "budget_fc_sweep"
+  description: "Sweep communication frequency with fixed dm=4, topology=fully_connected"
+  tags: ["budget", "frequency", "sweep", "decoupled"]

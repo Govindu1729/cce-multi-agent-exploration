@@ -16,8 +16,12 @@ import torch
 import torch.nn as nn
 import numpy as np
 from typing import Dict, List, Tuple, Optional, Set
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from enum import Enum
+
+from cce.comm.budget import (
+    CommConstraints, TopologyType, TopologyManager, DecoupledCommBudget
+)
 
 
 class Action(Enum):
@@ -33,13 +37,40 @@ class Action(Enum):
 @dataclass
 class GridWorldConfig:
     """Configuration for GridWorld environment."""
+    # Environment
     grid_size: int = 10
     num_agents: int = 2
     fov_radius: int = 2  # Field of view radius (Chebyshev distance)
     max_steps: int = 50
-    comm_budget: int = 10  # Max communication tokens per episode
-    comm_range: int = 3  # Communication range
     seed: Optional[int] = None
+    
+    # Communication constraints (decoupled)
+    # Legacy scalar budget (kept for backward compatibility)
+    comm_budget: int = 10  # Max communication tokens per episode
+    comm_range: int = 3    # Communication range for nearest_neighbor topology
+    
+    # New granular constraints
+    max_dm: int = 4                    # Message dimension in bits
+    comm_frequency: float = 1.0        # Send allowed every N steps (1.0 = every step)
+    topology: str = "fully_connected"  # Topology type
+    tokens_per_send: int = 1           # Tokens consumed per send
+    
+    def __post_init__(self):
+        """Validate and normalize config."""
+        # Normalize topology string
+        if isinstance(self.topology, TopologyType):
+            self.topology = self.topology.value
+        self.topology = self.topology.lower()
+        
+        # Create CommConstraints object
+        self.comm_constraints = CommConstraints(
+            max_dm=self.max_dm,
+            comm_frequency=self.comm_frequency,
+            topology=TopologyType(self.topology),
+            max_tokens=self.comm_budget,
+            tokens_per_send=self.tokens_per_send,
+            comm_range=self.comm_range,
+        )
 
 
 class GridWorld:
@@ -56,11 +87,13 @@ class GridWorld:
     - 'visited_teammates': (grid_size, grid_size) - binary mask of cells reported by teammates
     - 'tokens_remaining': (1,) - remaining communication tokens
     - 'step': (1,) - current step / max_steps
+    - 'comm_allowed': (num_agents,) - which agents can be sent to this step
     
     GLOBAL STATE (CRITIC ONLY):
     - 'global_visited': (grid_size, grid_size) - union of all agents' visited cells
     - 'global_coverage': float - fraction of grid covered
     - 'all_positions': (num_agents, 2) - all agent positions
+    - 'comm_budget_state': dict - full budget state for logging
     
     Agents NEVER receive global_visited or global_coverage in their observations.
     """
@@ -71,7 +104,6 @@ class GridWorld:
         self.num_agents = config.num_agents
         self.fov_radius = config.fov_radius
         self.max_steps = config.max_steps
-        self.comm_budget = config.comm_budget
         self.comm_range = config.comm_range
         
         # RNG
@@ -80,19 +112,29 @@ class GridWorld:
         if config.seed is not None:
             self.torch_rng.manual_seed(config.seed)
         
+        # Communication budget (decoupled)
+        self.comm_budget = DecoupledCommBudget(
+            constraints=config.comm_constraints,
+            num_agents=config.num_agents,
+            grid_size=config.grid_size
+        )
+        
         # State
         self.agent_positions: List[Tuple[int, int]] = []
         self.visited_masks: List[np.ndarray] = []  # Per-agent visited cells
         self.global_visited: np.ndarray = None
         self.step_count: int = 0
-        self.tokens_remaining: int = 0
         self.episode_done: bool = False
         
         # Communication tracking
         self.last_messages: List[Optional[Dict]] = []
+        self.comm_events: List[Tuple[int, int, np.ndarray]] = []
     
     def reset(self) -> Dict[str, torch.Tensor]:
         """Reset environment for new episode."""
+        # Clear previous episode state
+        self.agent_positions.clear()
+        
         # Random initial positions (spread out)
         positions = set()
         for i in range(self.num_agents):
@@ -121,9 +163,12 @@ class GridWorld:
         
         # Episode state
         self.step_count = 0
-        self.tokens_remaining = self.comm_budget
         self.episode_done = False
         self.last_messages = [None] * self.num_agents
+        self.comm_events = []
+        
+        # Reset comm budget with initial positions
+        self.comm_budget.reset(agent_positions=self.agent_positions)
         
         return self._get_observations()
     
@@ -154,6 +199,18 @@ class GridWorld:
         """Get observations for all agents (NO global coverage)."""
         obs = {}
         
+        # Get allowed receivers for each agent at current step
+        comm_allowed = []
+        for i in range(self.num_agents):
+            allowed = self.comm_budget.get_allowed_receivers(i)
+            # Convert to binary mask
+            allowed_mask = torch.zeros(self.num_agents, dtype=torch.bool)
+            for j in allowed:
+                allowed_mask[j] = True
+            comm_allowed.append(allowed_mask)
+        
+        comm_allowed = torch.stack(comm_allowed)
+        
         # Per-agent observations
         for i in range(self.num_agents):
             # Visited by teammates (via communication)
@@ -166,8 +223,13 @@ class GridWorld:
                 'position': torch.tensor(self.agent_positions[i], dtype=torch.float32),
                 'visited_self': torch.tensor(self.visited_masks[i].copy(), dtype=torch.bool),
                 'visited_teammates': torch.tensor(visited_teammates, dtype=torch.bool),
-                'tokens_remaining': torch.tensor([self.tokens_remaining], dtype=torch.float32),
-                'step': torch.tensor([self.step_count / self.max_steps], dtype=torch.float32),
+                'tokens_remaining': torch.tensor(
+                    [self.comm_budget.token_bucket.remaining], dtype=torch.float32
+                ),
+                'step': torch.tensor(
+                    [self.step_count / self.max_steps], dtype=torch.float32
+                ),
+                'comm_allowed': comm_allowed[i],  # Which agents can receive
             }
             
             for key, val in agent_obs.items():
@@ -197,8 +259,11 @@ class GridWorld:
             'global_visited': torch.tensor(self.global_visited.copy(), dtype=torch.bool),
             'global_coverage': torch.tensor([global_coverage], dtype=torch.float32),
             'all_positions': torch.tensor(self.agent_positions, dtype=torch.float32),
-            'tokens_remaining': torch.tensor([self.tokens_remaining], dtype=torch.float32),
+            'tokens_remaining': torch.tensor(
+                [self.comm_budget.token_bucket.remaining], dtype=torch.float32
+            ),
             'step': torch.tensor([self.step_count], dtype=torch.float32),
+            'comm_budget_state': self.comm_budget.get_state(),
         }
     
     def step(self, actions: List[int]) -> Tuple[Dict, List[float], bool, Dict]:
@@ -215,7 +280,7 @@ class GridWorld:
             raise RuntimeError("Episode already done. Call reset() first.")
         
         rewards = [0.0] * self.num_agents
-        comm_events = []
+        self.comm_events = []
         
         # Process movement actions
         for i, action in enumerate(actions):
@@ -244,29 +309,31 @@ class GridWorld:
             if action != Action.SEND.value:
                 continue
             
-            if self.tokens_remaining <= 0:
-                # Budget exhausted - should not happen if actor masks correctly
+            # Check if send is allowed by budget
+            if not self.comm_budget.token_bucket.can_send():
                 rewards[i] -= 0.1  # Small penalty for attempting invalid action
                 continue
             
-            # Send visited_self to teammates within range
-            sender_pos = self.agent_positions[i]
+            # Check frequency constraint
+            if not self.config.comm_constraints.is_send_allowed_at_step(self.step_count):
+                rewards[i] -= 0.1
+                continue
+            
+            # Get allowed receivers based on topology
+            allowed_receivers = self.comm_budget.get_allowed_receivers(i)
+            
+            if not allowed_receivers:
+                rewards[i] -= 0.1
+                continue
+            
+            # Send visited_self to allowed receivers
             sender_mask = self.visited_masks[i].copy()
             
-            for j in range(self.num_agents):
-                if i == j:
-                    continue
-                
-                receiver_pos = self.agent_positions[j]
-                dist = max(abs(sender_pos[0] - receiver_pos[0]),
-                          abs(sender_pos[1] - receiver_pos[1]))
-                
-                if dist <= self.comm_range:
-                    # Merge sender's visited into receiver's teammates knowledge
-                    # (In practice, this would be handled by the communication module)
-                    comm_events.append((i, j, sender_mask))
+            for j in allowed_receivers:
+                self.comm_events.append((i, j, sender_mask))
             
-            self.tokens_remaining -= 1
+            # Consume token
+            self.comm_budget.consume_token(i, len(allowed_receivers))
         
         # Calculate rewards based on NEW coverage
         prev_coverage = self._calculate_coverage()
@@ -283,8 +350,9 @@ class GridWorld:
         for i in range(self.num_agents):
             rewards[i] += coverage_gain * 10.0  # Scale reward
         
-        # Step counter
+        # Step counter and budget step
         self.step_count += 1
+        self.comm_budget.step(agent_positions=self.agent_positions)
         
         # Check termination
         self.episode_done = (self.step_count >= self.max_steps)
@@ -292,8 +360,8 @@ class GridWorld:
         # Info dict
         info = {
             'global_coverage': new_coverage,
-            'tokens_remaining': self.tokens_remaining,
-            'comm_events': comm_events,
+            'tokens_remaining': self.comm_budget.token_bucket.remaining,
+            'comm_events': self.comm_events,
             'global_state': self._get_global_state(),  # FOR CRITIC ONLY
         }
         
@@ -317,6 +385,10 @@ class GridWorld:
                     if max(abs(dx), abs(dy)) <= self.fov_radius:
                         cells.add((nx, ny))
         return cells
+    
+    def get_comm_adjacency(self) -> np.ndarray:
+        """Get current communication adjacency matrix."""
+        return self.comm_budget.topology.get_adjacency_matrix()
 
 
 if __name__ == "__main__":
@@ -329,6 +401,7 @@ if __name__ == "__main__":
     print(f"Observations keys: {obs.keys()}")
     print(f"visited_self shape: {obs['visited_self'].shape}")
     print(f"position shape: {obs['position'].shape}")
+    print(f"comm_allowed shape: {obs['comm_allowed'].shape}")
     
     # Step
     obs, rewards, done, info = env.step([Action.RIGHT.value, Action.LEFT.value])

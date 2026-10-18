@@ -1,0 +1,31 @@
+# @package _global_
+
+# Budget topology sweep: Fix dm=4, frequency=1, sweep topology
+# topology ∈ {fully_connected, nearest_neighbor, ring, star}
+
+defaults:
+  - /experiment/base
+
+# Sweep over topology types
+topology_values: ["fully_connected", "nearest_neighbor", "ring", "star"]
+
+# Hydra multirun configuration
+hydra:
+  sweeper:
+    params:
+      comm.topology: ${topology_values}
+  mode: MULTIRUN
+
+# Override fixed parameters
+comm:
+  max_dm: 4
+  comm_frequency: 1.0
+  max_tokens: 10
+  tokens_per_send: 1
+  comm_range: 3
+
+# Experiment config
+experiment:
+  name: "budget_topology_sweep"
+  description: "Sweep communication topology with fixed dm=4, frequency=1"
+  tags: ["budget", "topology", "sweep", "decoupled"]

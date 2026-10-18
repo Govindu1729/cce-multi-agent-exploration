@@ -297,7 +297,7 @@ def test_token_budget_enforcement():
     
     # Tokens exhausted
     assert obs['tokens_remaining'][0].item() == 3
-    assert env.tokens_remaining == 3
+    assert env.comm_budget.token_bucket.remaining == 3
     print("  ✓ Token budget correctly tracked and exhausted")
     print("TEST PASSED")
 
