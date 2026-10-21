@@ -1,0 +1,16 @@
+# Grid scaling: vary environment size
+
+defaults:
+  - base
+  - _self_
+
+num_envs: 64
+num_updates: 500
+run_dir: "runs/grid_scaling"
+
+num_agents: 4
+fov_size: 5
+beta: 0.25
+
+grid_size: 20
+max_steps: 128

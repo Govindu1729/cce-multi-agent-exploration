@@ -1,0 +1,16 @@
+# Agent scaling: vary number of agents
+
+defaults:
+  - base
+  - _self_
+
+num_envs: 64
+num_updates: 500
+run_dir: "runs/agent_scaling"
+
+grid_size: 20
+fov_size: 5
+max_steps: 128
+beta: 0.25
+
+num_agents: 4
