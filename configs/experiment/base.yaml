@@ -63,7 +63,7 @@ training:
   minibatch_size: 64
   ppo_epochs: 4
   num_workers: 4
-  device: "cuda"
+  device: "auto"  # auto, cuda, mps, cpu
 
 # Logging configuration
 logging:

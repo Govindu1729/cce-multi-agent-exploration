@@ -2,6 +2,7 @@
 Training entry point for FAI multi-agent coverage experiments.
 
 This module provides the main training loop that can be invoked via Hydra configs.
+Supports MPS (Metal Performance Shaders) on Apple Silicon for accelerated training.
 """
 
 import sys
@@ -17,6 +18,35 @@ sys.path.insert(0, '/Users/srimaan/.openclaw/workspaces/repo-cce')
 from cce.envs.grid_world import GridWorld, GridWorldConfig
 from cce.baselines.frontier import run_frontier_baseline
 from cce.eval.metrics import compute_metrics, aggregate_episode_result
+
+
+def get_device(device_config: str = "auto") -> torch.device:
+    """
+    Get the best available device.
+    
+    Args:
+        device_config: "auto", "cuda", "mps", "cpu"
+        
+    Returns:
+        torch.device
+    """
+    if device_config == "auto":
+        if torch.cuda.is_available():
+            return torch.device("cuda")
+        elif hasattr(torch.backends, "mps") and torch.backends.mps.is_available():
+            return torch.device("mps")
+        else:
+            return torch.device("cpu")
+    elif device_config == "cuda":
+        return torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    elif device_config == "mps":
+        if hasattr(torch.backends, "mps") and torch.backends.mps.is_available():
+            return torch.device("mps")
+        else:
+            print("Warning: MPS not available, falling back to CPU")
+            return torch.device("cpu")
+    else:
+        return torch.device("cpu")
 
 
 def create_env_from_config(cfg: DictConfig) -> GridWorld:
@@ -48,10 +78,18 @@ def train(cfg: DictConfig) -> None:
     print("\nConfiguration:")
     print(OmegaConf.to_yaml(cfg))
     
+    # Get device
+    device = get_device(cfg.training.get("device", "auto"))
+    print(f"\nUsing device: {device}")
+    
     # Set seeds
     seed = cfg.experiment.seed
     torch.manual_seed(seed)
     np.random.seed(seed)
+    if device.type == "cuda":
+        torch.cuda.manual_seed_all(seed)
+    elif device.type == "mps":
+        torch.mps.manual_seed(seed)
     
     # Create environment
     env = create_env_from_config(cfg)
@@ -112,10 +150,18 @@ def train_with_config(config_path: str, overrides: list = None):
     print(f"Description: {cfg.experiment.description}")
     print("=" * 60)
     
+    # Get device
+    device = get_device(cfg.training.get("device", "auto"))
+    print(f"\nUsing device: {device}")
+    
     # Set seeds
     seed = cfg.experiment.seed
     torch.manual_seed(seed)
     np.random.seed(seed)
+    if device.type == "cuda":
+        torch.cuda.manual_seed_all(seed)
+    elif device.type == "mps":
+        torch.mps.manual_seed(seed)
     
     # Create environment
     env = create_env_from_config(cfg)
