@@ -1,0 +1,21 @@
+# FAI Project Requirements
+
+# Core ML
+torch>=2.0.0
+numpy>=1.24.0
+
+# Configuration
+hydra-core>=1.3.0
+omegaconf>=2.3.0
+
+# Visualization
+streamlit>=1.28.0
+plotly>=5.17.0
+pandas>=2.0.0
+
+# Testing
+pytest>=7.4.0
+
+# Optional: For video recording
+# imageio>=2.31.0
+# imageio-ffmpeg>=0.4.9
