@@ -1,5 +1,4 @@
-"""
-Frontier-Based Exploration Baseline for Multi-Agent Coverage.
+"""Frontier-Based Exploration Baseline for Multi-Agent Coverage.
 
 This is a classical non-learning baseline for comparison with MAPPO.
 Identifies frontier cells (boundary between known free space and unknown)
@@ -53,14 +52,12 @@ class FrontierBaseline:
             'DOWN': 1,
             'LEFT': 2,
             'RIGHT': 3,
-            'STAY': 4
         }
         self.action_vectors = {
-            0: (0, -1),  # UP
-            1: (0, 1),   # DOWN
-            2: (-1, 0),  # LEFT
-            3: (1, 0),   # RIGHT
-            4: (0, 0)    # STAY
+            0: (-1, 0),  # UP
+            1: (1, 0),   # DOWN
+            2: (0, -1),  # LEFT
+            3: (0, 1),   # RIGHT
         }
     
     def compute_frontiers(self, visited_mask: np.ndarray) -> List[Tuple[int, int]]:
@@ -75,7 +72,7 @@ class FrontierBaseline:
             visited_mask: Boolean mask of visited cells (grid_size, grid_size)
             
         Returns:
-            List of (x, y) frontier cell coordinates
+            List of (y, x) frontier cell coordinates
         """
         frontiers = []
         
@@ -86,23 +83,17 @@ class FrontierBaseline:
                 
                 # Check 4-connected neighbors
                 is_frontier = False
-                for dx, dy in [(0, 1), (0, -1), (1, 0), (-1, 0)]:
-                    nx, ny = x + dx, y + dy
-                    if 0 <= nx < self.grid_size and 0 <= ny < self.grid_size:
+                for dy, dx in [(-1, 0), (1, 0), (0, -1), (0, 1)]:
+                    ny, nx = y + dy, x + dx
+                    if 0 <= ny < self.grid_size and 0 <= nx < self.grid_size:
                         if visited_mask[ny, nx]:
                             is_frontier = True
                             break
                 
                 if is_frontier:
-                    frontiers.append((x, y))
+                    frontiers.append((y, x))
         
         return frontiers
-    
-    def compute_frontiers_global(self, global_visited: np.ndarray) -> List[Tuple[int, int]]:
-        """
-        Compute frontiers based on global visited map (all agents combined).
-        """
-        return self.compute_frontiers(global_visited)
     
     def manhattan_distance(self, pos1: Tuple[int, int], pos2: Tuple[int, int]) -> int:
         """Compute Manhattan distance between two positions."""
@@ -118,24 +109,24 @@ class FrontierBaseline:
         
         Uses greedy Manhattan distance reduction.
         """
-        cx, cy = current_pos
-        tx, ty = target_pos
+        cy, cx = current_pos
+        ty, tx = target_pos
         
-        dx = tx - cx
         dy = ty - cy
+        dx = tx - cx
         
         # Prioritize larger absolute difference
-        if abs(dx) > abs(dy):
-            if dx > 0:
-                return self.actions['RIGHT']
+        if abs(dy) > abs(dx):
+            if dy > 0:
+                return self.actions['DOWN']
             else:
-                return self.actions['LEFT']
-        elif dy > 0:
-            return self.actions['DOWN']
-        elif dy < 0:
-            return self.actions['UP']
+                return self.actions['UP']
+        elif dx > 0:
+            return self.actions['RIGHT']
+        elif dx < 0:
+            return self.actions['LEFT']
         else:
-            return self.actions['STAY']
+            return self.actions['UP']  # Already at target
     
     def select_frontier(
         self,
@@ -173,16 +164,16 @@ class FrontierBaseline:
         best_frontier = None
         best_score = float('inf')
         
-        for fx, fy in frontiers:
+        for fy, fx in frontiers:
             # Distance to frontier
-            dist = self.manhattan_distance(agent_pos, (fx, fy))
+            dist = self.manhattan_distance(agent_pos, (fy, fx))
             
             # Dispersion penalty: sum of inverse distances to other agents
             dispersion_penalty = 0.0
             for j, other_pos in enumerate(other_positions):
                 if j == agent_idx:
                     continue
-                other_dist = self.manhattan_distance(other_pos, (fx, fy))
+                other_dist = self.manhattan_distance(other_pos, (fy, fx))
                 if other_dist > 0:
                     dispersion_penalty += 1.0 / other_dist
             
@@ -191,7 +182,7 @@ class FrontierBaseline:
             
             if score < best_score:
                 best_score = score
-                best_frontier = (fx, fy)
+                best_frontier = (fy, fx)
         
         return best_frontier
     
@@ -229,8 +220,8 @@ class FrontierBaseline:
             )
             
             if target is None:
-                # No frontiers - stay put
-                actions.append(self.actions['STAY'])
+                # No frontiers - stay put (use UP as default)
+                actions.append(self.actions['UP'])
             else:
                 # Move towards frontier
                 action = self.get_next_step_towards(pos, target)
@@ -264,14 +255,12 @@ class FrontierBaselineGlobal:
             'DOWN': 1,
             'LEFT': 2,
             'RIGHT': 3,
-            'STAY': 4
         }
         self.action_vectors = {
-            0: (0, -1),
-            1: (0, 1),
-            2: (-1, 0),
-            3: (1, 0),
-            4: (0, 0)
+            0: (-1, 0),
+            1: (1, 0),
+            2: (0, -1),
+            3: (0, 1)
         }
     
     def compute_frontiers(self, visited_mask: np.ndarray) -> List[Tuple[int, int]]:
@@ -281,14 +270,14 @@ class FrontierBaselineGlobal:
                 if visited_mask[y, x]:
                     continue
                 is_frontier = False
-                for dx, dy in [(0, 1), (0, -1), (1, 0), (-1, 0)]:
-                    nx, ny = x + dx, y + dy
-                    if 0 <= nx < self.grid_size and 0 <= ny < self.grid_size:
+                for dy, dx in [(-1, 0), (1, 0), (0, -1), (0, 1)]:
+                    ny, nx = y + dy, x + dx
+                    if 0 <= ny < self.grid_size and 0 <= nx < self.grid_size:
                         if visited_mask[ny, nx]:
                             is_frontier = True
                             break
                 if is_frontier:
-                    frontiers.append((x, y))
+                    frontiers.append((y, x))
         return frontiers
     
     def manhattan_distance(self, pos1: Tuple[int, int], pos2: Tuple[int, int]) -> int:
@@ -299,22 +288,22 @@ class FrontierBaselineGlobal:
         current_pos: Tuple[int, int], 
         target_pos: Tuple[int, int]
     ) -> int:
-        cx, cy = current_pos
-        tx, ty = target_pos
-        dx = tx - cx
+        cy, cx = current_pos
+        ty, tx = target_pos
         dy = ty - cy
+        dx = tx - cx
         
-        if abs(dx) > abs(dy):
-            if dx > 0:
-                return self.actions['RIGHT']
+        if abs(dy) > abs(dx):
+            if dy > 0:
+                return self.actions['DOWN']
             else:
-                return self.actions['LEFT']
-        elif dy > 0:
-            return self.actions['DOWN']
-        elif dy < 0:
-            return self.actions['UP']
+                return self.actions['UP']
+        elif dx > 0:
+            return self.actions['RIGHT']
+        elif dx < 0:
+            return self.actions['LEFT']
         else:
-            return self.actions['STAY']
+            return self.actions['UP']
     
     def act(
         self,
@@ -326,7 +315,7 @@ class FrontierBaselineGlobal:
         frontiers = self.compute_frontiers(global_visited)
         
         if not frontiers:
-            return [self.actions['STAY']] * self.num_agents
+            return [self.actions['UP']] * self.num_agents
         
         # Assign frontiers to agents to minimize total distance
         # Simple greedy assignment
@@ -337,15 +326,15 @@ class FrontierBaselineGlobal:
             best_frontier = None
             best_score = float('inf')
             
-            for fx, fy in available_frontiers:
-                dist = self.manhattan_distance(pos, (fx, fy))
+            for fy, fx in available_frontiers:
+                dist = self.manhattan_distance(pos, (fy, fx))
                 
                 # Dispersion
                 dispersion = 0.0
                 for j, other_pos in enumerate(agent_positions):
                     if j == i:
                         continue
-                    other_dist = self.manhattan_distance(other_pos, (fx, fy))
+                    other_dist = self.manhattan_distance(other_pos, (fy, fx))
                     if other_dist > 0:
                         dispersion += 1.0 / other_dist
                 
@@ -353,14 +342,14 @@ class FrontierBaselineGlobal:
                 
                 if score < best_score:
                     best_score = score
-                    best_frontier = (fx, fy)
+                    best_frontier = (fy, fx)
             
             if best_frontier:
                 available_frontiers.remove(best_frontier)
                 action = self.get_next_step_towards(pos, best_frontier)
                 actions.append(action)
             else:
-                actions.append(self.actions['STAY'])
+                actions.append(self.actions['UP'])
         
         return actions
 
@@ -377,7 +366,7 @@ def run_frontier_baseline(
     Run frontier baseline evaluation.
     
     Args:
-        env: GridWorld environment
+        env: VectorGridWorld environment
         num_episodes: Number of episodes to run
         max_steps: Max steps per episode
         use_global: If True, use global knowledge (upper bound)
@@ -393,18 +382,18 @@ def run_frontier_baseline(
     # Choose baseline class
     if use_global:
         baseline = FrontierBaselineGlobal(
-            grid_size=env.grid_size,
-            num_agents=env.num_agents,
-            fov_radius=env.fov_radius,
+            grid_size=env.G,
+            num_agents=env.N,
+            fov_radius=env.r,
             dispersion_weight=dispersion_weight
         )
     else:
         baseline = FrontierBaseline(
-            grid_size=env.grid_size,
-            num_agents=env.num_agents,
-            fov_radius=env.fov_radius,
+            grid_size=env.G,
+            num_agents=env.N,
+            fov_radius=env.r,
             dispersion_weight=dispersion_weight,
-            comm_range=env.comm_range
+            comm_range=env.cfg.comm_range
         )
     
     all_coverages = []
@@ -417,13 +406,11 @@ def run_frontier_baseline(
         
         # Get initial global state for global baseline
         if use_global:
-            global_state = env._get_global_state()
-            global_visited = global_state['global_visited'].numpy()
+            global_state = env.get_global_state()
+            global_visited = global_state['visited']  # We'll need to check this
         else:
-            # For local baseline, build global from observations
-            global_visited = np.zeros((env.grid_size, env.grid_size), dtype=bool)
-            for i in range(env.num_agents):
-                global_visited |= obs['visited_self'][i].numpy()
+            # For local baseline, build global from environment's visited_global
+            global_visited = env.visited_global[0].copy()
         
         coverage_reached_95 = False
         steps_to_95 = max_steps
@@ -431,48 +418,53 @@ def run_frontier_baseline(
         for step in range(max_steps):
             # Get observations
             if use_global:
-                global_state = env._get_global_state()
-                global_visited = global_state['global_visited'].numpy()
+                global_state = env.get_global_state()
+                global_visited = global_state['visited']
             
             # Compute actions
             if use_global:
                 actions = baseline.act(
-                    agent_positions=env.agent_positions,
-                    visited_masks=env.visited_masks,
+                    agent_positions=[(env.agent_pos[0, i, 0], env.agent_pos[0, i, 1]) for i in range(env.N)],
+                    visited_masks=[env.visited_local[0, i] for i in range(env.N)],
                     global_visited=global_visited
                 )
             else:
                 actions = baseline.act(
-                    agent_positions=env.agent_positions,
-                    visited_masks=env.visited_masks,
+                    agent_positions=[(env.agent_pos[0, i, 0], env.agent_pos[0, i, 1]) for i in range(env.N)],
+                    visited_masks=[env.visited_local[0, i] for i in range(env.N)],
                     global_visited=global_visited
                 )
             
-            # Step environment
-            obs, rewards, done, info = env.step(actions)
+            # Step environment (no send, no messages)
+            actions = np.array(actions).reshape(1, env.N)
+            send_flags = np.zeros((1, env.N), dtype=bool)
+            message_embeddings = np.zeros((1, env.N, 8), dtype=np.float32)
             
-            # Update global visited
-            global_visited = info['global_state']['global_visited'].numpy()
-            coverage = info['global_coverage']
+            obs, rewards, done, info = env.step(actions, send_flags, message_embeddings)
+            
+            # Update global visited from environment
+            global_visited = env.visited_global[0].copy()
+            
+            coverage = info['coverage'][0]
             
             # Check if 95% coverage reached
             if not coverage_reached_95 and coverage >= 0.95:
                 coverage_reached_95 = True
                 steps_to_95 = step + 1
             
-            if done:
+            if done[0]:
                 break
         
         # Final metrics
-        final_coverage = info['global_coverage']
+        final_coverage = info['coverage'][0]
         all_coverages.append(final_coverage)
         all_episode_steps.append(step + 1)
         
         if coverage_reached_95:
             all_steps_to_95.append(steps_to_95)
         
-        # Compute overlap: fraction of cells visited by multiple agents
-        overlap = compute_overlap(env.visited_masks)
+        # Compute overlap: fraction of visited cells visited by >1 agent
+        overlap = compute_overlap([obs['visited_self'][0, i] > 0 for i in range(env.N)])
         all_overlaps.append(overlap)
     
     # Aggregate metrics
@@ -523,21 +515,84 @@ def compute_overlap(visited_masks: List[np.ndarray]) -> float:
     return overlapped / total_visited
 
 
+def run_random_baseline(
+    env,
+    num_episodes: int = 100,
+    max_steps: int = 50,
+    seed: Optional[int] = None
+) -> Dict:
+    """Run random action baseline for comparison."""
+    if seed is not None:
+        np.random.seed(seed)
+    
+    all_coverages = []
+    all_steps_to_95 = []
+    all_overlaps = []
+    all_episode_steps = []
+    
+    for ep in range(num_episodes):
+        obs = env.reset()
+        coverage_reached_95 = False
+        steps_to_95 = max_steps
+        
+        for step in range(max_steps):
+            # Random actions (movement only)
+            actions = np.random.randint(0, 4, size=(1, env.N))
+            send_flags = np.zeros((1, env.N), dtype=bool)
+            message_embeddings = np.zeros((1, env.N, 8), dtype=np.float32)
+            
+            obs, rewards, done, info = env.step(actions, send_flags, message_embeddings)
+            coverage = info['coverage'][0]
+            
+            if not coverage_reached_95 and coverage >= 0.95:
+                coverage_reached_95 = True
+                steps_to_95 = step + 1
+            
+            if done[0]:
+                break
+        
+        final_coverage = info['coverage'][0]
+        all_coverages.append(final_coverage)
+        all_episode_steps.append(step + 1)
+        
+        if coverage_reached_95:
+            all_steps_to_95.append(steps_to_95)
+        
+        overlap = compute_overlap([obs['visited_self'][0, i] > 0 for i in range(env.N)])
+        all_overlaps.append(overlap)
+    
+    metrics = {
+        'coverage_mean': np.mean(all_coverages),
+        'coverage_std': np.std(all_coverages),
+        'coverage_final': all_coverages[-1] if all_coverages else 0.0,
+        't95': np.median(all_steps_to_95) if all_steps_to_95 else float('inf'),
+        't95_mean': np.mean(all_steps_to_95) if all_steps_to_95 else float('inf'),
+        't95_std': np.std(all_steps_to_95) if all_steps_to_95 else 0.0,
+        'success_rate': len(all_steps_to_95) / num_episodes,
+        'overlap_mean': np.mean(all_overlaps),
+        'overlap_std': np.std(all_overlaps),
+        'steps_mean': np.mean(all_episode_steps),
+        'steps_std': np.std(all_episode_steps),
+    }
+    
+    return metrics
+
+
 if __name__ == "__main__":
-    # Quick test with GridWorld
+    # Quick test with VectorGridWorld
     import sys
     sys.path.insert(0, '/Users/srimaan/.openclaw/workspaces/repo-cce')
     
-    from cce.envs.grid_world import GridWorld, GridWorldConfig
+    from cce.envs.grid_world import VectorGridWorld, GridWorldConfig
     
     config = GridWorldConfig(
-        grid_size=10,
-        num_agents=2,
-        fov_radius=2,
-        max_steps=50,
+        grid_size=20,
+        num_agents=4,
+        fov_size=5,
+        max_steps=128,
         seed=42
     )
-    env = GridWorld(config)
+    env = VectorGridWorld(config, num_envs=1)
     
     print("Testing FrontierBaseline...")
     metrics = run_frontier_baseline(env, num_episodes=10, seed=42)

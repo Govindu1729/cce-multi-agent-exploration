@@ -132,7 +132,7 @@ def create_grid_figure(data: dict, step_idx: int) -> go.Figure:
     ))
     
     # Layer 3: Agent positions (star markers)
-    for i, (x, y) in enumerate(agent_positions):
+    for i, (y, x) in enumerate(agent_positions):
         color = agent_colors[i % len(agent_colors)]
         fig.add_trace(go.Scatter(
             x=[x],
@@ -146,7 +146,7 @@ def create_grid_figure(data: dict, step_idx: int) -> go.Figure:
             ),
             name=f'Agent {i+1}',
             showlegend=True,
-            hovertemplate=f'Agent {i+1}<br>Position: ({x}, {y})<extra></extra>'
+            hovertemplate=f'Agent {i+1}<br>Position: ({y}, {x})<extra></extra>'
         ))
     
     # Layer 4: Communication lines (dashed lines for current step messages)
@@ -154,8 +154,8 @@ def create_grid_figure(data: dict, step_idx: int) -> go.Figure:
         sender = msg['sender']
         receiver = msg['receiver']
         if sender < len(agent_positions) and receiver < len(agent_positions):
-            sx, sy = agent_positions[sender]
-            rx, ry = agent_positions[receiver]
+            sy, sx = agent_positions[sender]
+            ry, rx = agent_positions[receiver]
             
             sender_color = agent_colors[sender % len(agent_colors)]
             fig.add_trace(go.Scatter(
@@ -328,7 +328,8 @@ def main():
                 st.rerun()
             
             # Show current step data
-            data = trajectory[step_idx].get_data_for_step(step_idx) if hasattr(trajectory[step_idx], 'get_data_for_step') else trajectory[step_idx]
+            record = trajectory[step_idx]
+            data = record.get_data_for_step(step_idx) if hasattr(record, 'get_data_for_step') else record
             
             # Display data
             st.divider()

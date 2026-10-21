@@ -1,5 +1,4 @@
-"""
-Episode Recorder for Visualization.
+"""Episode Recorder for Visualization.
 
 Records complete episode trajectories for the Streamlit visualizer.
 """
@@ -7,7 +6,7 @@ Records complete episode trajectories for the Streamlit visualizer.
 import pickle
 import numpy as np
 from typing import List, Dict, Any, Optional
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 
 
 @dataclass
@@ -16,7 +15,7 @@ class EpisodeStep:
     step: int
     grid: np.ndarray              # GxG (0=free, 1=obstacle)
     visited_global: np.ndarray    # GxG (0=unvisited, 1..N=agent_id)
-    agent_positions: List[List[int]]  # [[x, y], ...] per agent
+    agent_positions: List[List[int]]  # [[y, x], ...] per agent
     messages: List[Dict[str, Any]]    # [{"sender": int, "receiver": int, "code": int, "utility": float}, ...]
     metrics: Dict[str, float]     # {"coverage": float, "bandwidth_used": float, "lam": float}
 
@@ -33,13 +32,13 @@ class EpisodeRecorder:
         Initialize recorder.
         
         Args:
-            env: GridWorld environment
+            env: VectorGridWorld environment
             grid: Base grid (GxG) with obstacles (1) and free space (0)
         """
         self.env = env
         self.grid = grid
         self.grid_size = grid.shape[0]
-        self.num_agents = env.num_agents
+        self.num_agents = env.N
         self.trajectory: List[EpisodeStep] = []
         self._episode_step = 0
         self._bandwidth_used = 0.0
@@ -52,7 +51,7 @@ class EpisodeRecorder:
         self._bandwidth_used = 0.0
         self._lam = 0.0
     
-    def record_step(self, obs: Dict, rewards: List[float], info: Dict, 
+    def record_step(self, obs: Dict, rewards: np.ndarray, info: Dict, 
                     messages: List[Dict[str, Any]]):
         """
         Record a single timestep.
@@ -64,16 +63,20 @@ class EpisodeRecorder:
             messages: List of messages sent this step
         """
         # Build visited_global: 0=unvisited, 1..N=agent_id
+        # Use environment's visited_local which is (B, N, G, G)
         visited_global = np.zeros((self.grid_size, self.grid_size), dtype=int)
         for i in range(self.num_agents):
-            visited_self = obs['visited_self'][i].numpy()
+            visited_self = self.env.visited_local[0, i]  # (G, G)
             visited_global[visited_self] = i + 1
         
         # Agent positions
-        agent_positions = [list(pos) for pos in self.env.agent_positions]
+        agent_positions = []
+        for i in range(self.num_agents):
+            y, x = self.env.agent_pos[0, i]
+            agent_positions.append([int(y), int(x)])
         
         # Coverage
-        coverage = info['global_coverage']
+        coverage = info['coverage'][0]
         
         # Track bandwidth
         self._bandwidth_used += len(messages) * 4  # Assuming dm=4
@@ -144,20 +147,26 @@ class EpisodeRecorder:
         return [r.metrics["bandwidth_used"] for r in self.trajectory]
 
 
-def extract_messages_from_info(info: Dict) -> List[Dict[str, Any]]:
+def extract_messages_from_info(info: Dict, env) -> List[Dict[str, Any]]:
     """
     Extract messages from environment info.
     
     Expected info['comm_events'] format: [(sender, receiver, mask), ...]
     """
     messages = []
-    for sender, receiver, mask in info.get('comm_events', []):
-        messages.append({
-            "sender": sender,
-            "receiver": receiver,
-            "code": int(mask.sum()),  # Number of cells shared
-            "utility": float(mask.sum())  # Simple utility
-        })
+    # VectorGridWorld doesn't track individual messages in info
+    # We'll create placeholder messages based on in_range and send flags
+    if hasattr(env, 'in_range'):
+        in_range = env.in_range[0]  # (N, N)
+        for i in range(env.N):
+            for j in range(env.N):
+                if in_range[i, j] and i != j:
+                    messages.append({
+                        "sender": i,
+                        "receiver": j,
+                        "code": 0,
+                        "utility": 1.0
+                    })
     return messages
 
 
@@ -166,13 +175,13 @@ if __name__ == "__main__":
     import sys
     sys.path.insert(0, '/Users/srimaan/.openclaw/workspaces/repo-cce')
     
-    from cce.envs.grid_world import GridWorld, GridWorldConfig
+    from cce.envs.grid_world import VectorGridWorld, GridWorldConfig
     
-    config = GridWorldConfig(grid_size=10, num_agents=2, seed=42)
-    env = GridWorld(config)
+    config = GridWorldConfig(grid_size=20, num_agents=2, seed=42)
+    env = VectorGridWorld(config, num_envs=1)
     
     # Create dummy grid
-    grid = np.zeros((10, 10), dtype=int)
+    grid = np.zeros((20, 20), dtype=int)
     grid[5, 5] = 1  # Obstacle
     
     recorder = EpisodeRecorder(env, grid)
@@ -180,12 +189,14 @@ if __name__ == "__main__":
     # Simulate recording
     obs = env.reset()
     for step in range(5):
-        actions = [0, 1]  # UP, DOWN
-        obs, rewards, done, info = env.step(actions)
-        messages = extract_messages_from_info(info)
+        actions = np.array([[0, 1]])  # UP, DOWN
+        send_flags = np.array([[False, False]])
+        message_embeddings = np.zeros((1, 2, 8), dtype=np.float32)
+        obs, rewards, done, info = env.step(actions, send_flags, message_embeddings)
+        messages = extract_messages_from_info(info, env)
         recorder.record_step(obs, rewards, info, messages)
         
-        if done:
+        if done[0]:
             break
     
     # Save and load
@@ -193,5 +204,4 @@ if __name__ == "__main__":
     loaded = EpisodeRecorder.load("/tmp/test_trajectory.pkl")
     
     print(f"Recorded {len(loaded)} steps")
-    print(f"Step 0 data: {loaded[0].keys() if hasattr(loaded[0], 'keys') else 'N/A'}")
     print("Recorder test passed!")

@@ -1,0 +1,17 @@
+{
+  "coverage": 0.6458948841268487,
+  "coverage_std": 0.17634646308590074,
+  "t95": 32.0,
+  "t95_std": 0.0,
+  "success_rate": 0.0,
+  "avg_comm_cost": 0.0,
+  "bandwidth": 0.0,
+  "avg_reward": -1.499363205730333,
+  "exploration_rate": 0.020184215128964022,
+  "comm_efficiency": 64589488.412684865,
+  "send_rate": 0.5,
+  "entropy": -1.4426951601859516e-10,
+  "active_codes": 1,
+  "code_diversity": 0.125,
+  "total_messages": 1024
+}
