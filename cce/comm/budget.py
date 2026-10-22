@@ -1,15 +1,15 @@
-"""Budget controller: Lagrangian dual mechanism for enforcing normalised β.
+"""Budget controller with HARD token bucket enforcement.
 
-Maintains a running estimate of the send-threshold τ (in policy mode) or the
-Lagrangian multiplier λ (in utility mode). The goal is to ensure that the
-per-episode bandwidth cost equals the target β.
+Maintains a running estimate of the send-threshold τ (in utility mode) or the
+Lagrangian multiplier λ (in policy mode), AND enforces a hard communication budget
+via a token bucket that physically prevents send actions when tokens are exhausted.
 
-Two modes:
-  - 'policy': agents sample a send decision from the policy. The budget
-              controller modulates the send logit with -λ, where λ is
-              updated by a PID-like controller based on the bandwidth error.
-  - 'utility': agents output a utility u ∈ [0,1]. A message is sent iff
-               u > τ, where τ is set by the controller.
+Two components:
+  - TokenBucket: hard cap on messages sent per episode. When tokens_remaining == 0,
+    the send action is masked to -inf BEFORE the policy samples.
+  - BudgetController: soft Lagrangian mechanism (policy mode) or threshold (utility
+    mode) for tuning the actual bandwidth to match target β.
+
 """
 
 from __future__ import annotations
@@ -20,11 +20,72 @@ import torch
 import torch.nn as nn
 
 
+class TokenBucket:
+    """Hard communication budget: tokens cannot go below zero.
+
+    When remaining tokens = 0, send actions must be masked to -inf before
+    the policy samples, making the send action physically impossible.
+
+    Args:
+        max_tokens: Total tokens available per episode. If 0, send is blocked
+            from step 0.
+    """
+
+    def __init__(self, max_tokens: int):
+        self.max_tokens = max_tokens
+        self._remaining = max_tokens
+
+    def reset(self) -> None:
+        """Reset to full capacity at episode start."""
+        self._remaining = self.max_tokens
+
+    @property
+    def remaining(self) -> int:
+        """Current tokens available for sending."""
+        return self._remaining
+
+    def consume(self, tokens: int = 1) -> bool:
+        """Attempt to consume tokens. Returns True if successful, False otherwise."""
+        if self._remaining >= tokens:
+            self._remaining -= tokens
+            return True
+        return False
+
+    def send_allowed(self) -> bool:
+        """Check if send action is physically possible."""
+        return self._remaining > 0
+
+    def mask_send_logits(self, logits: torch.Tensor) -> torch.Tensor:
+        """Mask send logits to -inf when tokens exhausted.
+
+        Args:
+            logits: (B, N) or (N,) tensor of raw logits.
+
+        Returns:
+            Same shape as input, with -1e9 where send is disallowed.
+        """
+        if self.send_allowed():
+            return logits
+        return torch.full_like(logits, -1e9)
+
+
 class BudgetController(nn.Module):
+    """Soft Lagrangian mechanism with optional hard token bucket enforcement.
+
+    Args:
+        mode: 'policy' (soft mask via λ) or 'utility' (threshold).
+        target_beta: Target normalised communication rate per episode.
+        max_tokens: Hard token budget per episode. If 0, send is blocked from
+            step 0. If None, no hard limit (soft only).
+        pid_kp, pid_ki, pid_kd: PID controller gains for λ update.
+        max_lambda: Upper clamp for λ.
+    """
+
     def __init__(
         self,
         mode: Literal["policy", "utility"] = "policy",
         target_beta: float = 0.25,
+        max_tokens: int | None = None,
         pid_kp: float = 0.5,
         pid_ki: float = 0.05,
         pid_kd: float = 0.1,
@@ -33,6 +94,7 @@ class BudgetController(nn.Module):
         super().__init__()
         self.mode = mode
         self.target_beta = target_beta
+        self.max_tokens = max_tokens
         self.pid_kp = pid_kp
         self.pid_ki = pid_ki
         self.pid_kd = pid_kd
@@ -45,12 +107,20 @@ class BudgetController(nn.Module):
         self.register_buffer("episode_cost", torch.tensor(0.0))
         self.register_buffer("episode_steps", torch.tensor(0, dtype=torch.long))
 
+        # Hard token bucket
+        # If max_tokens is not specified and target_beta is 0.0, enforce zero communication.
+        if max_tokens is None and target_beta == 0.0:
+            max_tokens = 0
+        self._bucket = TokenBucket(max_tokens) if max_tokens is not None else None
+
     def reset_episode(self) -> None:
-        """Reset per-episode accumulators. Call at episode start."""
+        """Reset per-episode accumulators and token bucket. Call at episode start."""
         self.episode_cost.zero_()
         self.episode_steps.zero_()
         self.integral.zero_()
         self.prev_error.zero_()
+        if self._bucket is not None:
+            self._bucket.reset()
 
     def on_step(self, comm_cost: float | torch.Tensor) -> None:
         """Record per-step cost for the running episode average."""
@@ -95,9 +165,32 @@ class BudgetController(nn.Module):
                 "error": error,
             }
 
+    def mask_send_logits(self, logits: torch.Tensor) -> torch.Tensor:
+        """Apply hard token bucket mask (if enabled) to send logits.
+
+        When tokens are exhausted (remaining == 0), sends logits are
+        masked to -inf BEFORE the policy samples, making send physically
+        impossible. Soft Lagrangian bias (-λ) is applied separately.
+
+        Args:
+            logits: (B, N) or (N,) raw logits for send action.
+
+        Returns:
+            Logits with -1e9 masked where send is disallowed.
+        """
+        if self._bucket is not None:
+            logits = self._bucket.mask_send_logits(logits)
+        return logits
+
     def get_send_logit_bias(self) -> torch.Tensor:
-        """Return the logit bias to subtract from the send logit (policy mode)."""
+        """Return the soft Lagrangian bias to subtract from send logit (policy mode)."""
         return self.lam
+
+    def send_allowed(self) -> bool:
+        """Check if send action is physically possible given hard token bucket."""
+        if self._bucket is not None:
+            return self._bucket.send_allowed()
+        return True
 
     def get_threshold(self) -> torch.Tensor:
         """Return the threshold τ (utility mode)."""
