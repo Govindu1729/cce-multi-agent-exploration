@@ -11,7 +11,7 @@ from cce.algo.mappo import MAPPO
 def test_mappo_init():
     cfg = GridWorldConfig(grid_size=10, num_agents=2, fov_size=3, max_steps=10,
                           message_embed_dim=4)
-    env = VectorGridWorld(cfg, num_envs=4, message_embed_dim=4)
+    env = VectorGridWorld(cfg, num_envs=4)
     agent = MAPPO(env, actor_hidden=32, critic_hidden=64, n_codes=8, code_dim=4, n_slots=2)
 
     assert agent.actor is not None
