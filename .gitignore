@@ -38,7 +38,7 @@ Thumbs.db
 
 # Project specific
 wandb/
-runs/
+runs/*
 checkpoints/
 results/
 logs/
@@ -50,3 +50,11 @@ outputs/
 
 # Hydra
 multirun/
+
+# Curated run artifacts (must come after the ignore rules above to override
+# them; only these three file kinds are tracked, everything else under runs/
+# stays ignored).
+!runs/**/
+!runs/**/best_model.pt
+!runs/**/eval_results.json
+!runs/**/trajectory.pkl
