@@ -49,12 +49,12 @@ def test_budget_controller_converges():
         bc.on_episode_end()
 
     # Lambda should have increased significantly
-    assert bc.lambda.item() > 1.0
+    assert bc.lam.item() > 1.0
 
 
 def test_budget_controller_decide_send_utility():
     bc = BudgetController(mode="utility", target_beta=0.5)
-    bc.lambda.fill_(0.3)  # Set threshold to 0.3
+    bc.lam.fill_(0.3)  # Set threshold to 0.3
 
     utility = torch.tensor([0.1, 0.5, 0.2, 0.8])
     hard, soft = bc.decide_send_utility(utility)

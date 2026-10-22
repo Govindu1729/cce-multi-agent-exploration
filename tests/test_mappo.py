@@ -9,8 +9,9 @@ from cce.algo.mappo import MAPPO
 
 
 def test_mappo_init():
-    cfg = GridWorldConfig(grid_size=10, num_agents=2, fov_size=3, max_steps=10)
-    env = VectorGridWorld(cfg, num_envs=4)
+    cfg = GridWorldConfig(grid_size=10, num_agents=2, fov_size=3, max_steps=10,
+                          message_embed_dim=4)
+    env = VectorGridWorld(cfg, num_envs=4, message_embed_dim=4)
     agent = MAPPO(env, actor_hidden=32, critic_hidden=64, n_codes=8, code_dim=4, n_slots=2)
 
     assert agent.actor is not None
@@ -19,7 +20,9 @@ def test_mappo_init():
 
 
 def test_mappo_select_actions():
-    cfg = GridWorldConfig(grid_size=10, num_agents=2, fov_size=3, max_steps=10)
+    # Keep the env's message width consistent with the agent's code_dim.
+    cfg = GridWorldConfig(grid_size=10, num_agents=2, fov_size=3, max_steps=10,
+                          message_embed_dim=4)
     env = VectorGridWorld(cfg, num_envs=4)
     agent = MAPPO(env, actor_hidden=32, critic_hidden=64, n_codes=8, code_dim=4, n_slots=2)
 
@@ -36,7 +39,11 @@ def test_mappo_select_actions():
 
 
 def test_mappo_train_step():
-    cfg = GridWorldConfig(grid_size=10, num_agents=2, fov_size=3, max_steps=10)
+    # message_embed_dim must equal the agent's code_dim: the environment derives
+    # the message_embed observation width from it, and the rollout buffer sizes
+    # itself from env.obs_spec. train.py/evaluate.py wire these identically.
+    cfg = GridWorldConfig(grid_size=10, num_agents=2, fov_size=3, max_steps=10,
+                          message_embed_dim=4)
     env = VectorGridWorld(cfg, num_envs=4)
     agent = MAPPO(
         env, actor_hidden=32, critic_hidden=64, n_codes=8, code_dim=4, n_slots=2,
