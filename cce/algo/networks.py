@@ -103,10 +103,13 @@ class Actor(nn.Module):
 
         # Move head
         move_logits = self.move_head(h)  # (..., 4)
-        # Send head with budget bias
+        # Send head with budget bias (soft penalty)
         send_logit = self.send_head(h).squeeze(-1)  # (...)
         if self.budget_controller.mode == "policy":
             send_logit = send_logit - self.budget_controller.get_send_logit_bias()
+
+        # Apply HARD token bucket mask (to -inf) when tokens exhausted
+        send_logit = self.budget_controller.mask_send_logits(send_logit)
 
         dist = MultiActionDist(move_logits, send_logit)
 
