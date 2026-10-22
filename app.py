@@ -17,6 +17,7 @@ The dashboard is purely a *viewer*: it reads a pickled list of
 
 from __future__ import annotations
 
+import io
 import pickle
 from pathlib import Path
 
@@ -53,12 +54,19 @@ st.markdown(
 
 
 # ----------------------------------------------------------------------
-# Loading
+# Loading (cached so slider drags never re-read disk / re-pickle)
 # ----------------------------------------------------------------------
 @st.cache_data(show_spinner=False)
-def load_trajectory(path: str):
-    with open(path, "rb") as fh:
-        return pickle.load(fh)
+def load_trajectory_bytes(data: bytes) -> list:
+    """Unpickle trajectory from raw bytes. Cached by content so reruns are free."""
+    return pickle.load(io.BytesIO(data))
+
+
+def load_trajectory_file(uploaded) -> list:
+    """Accept an UploadedFile or a str path and return the trajectory list."""
+    if isinstance(uploaded, str):
+        return load_trajectory_bytes(Path(uploaded).read_bytes())
+    return load_trajectory_bytes(uploaded.getvalue())
 
 
 def get_frame(record, idx: int) -> dict:
@@ -76,7 +84,7 @@ def get_frame(record, idx: int) -> dict:
 
 
 # ----------------------------------------------------------------------
-# Figure builders
+# Figure builders (built only from cached numpy arrays; no disk/env access)
 # ----------------------------------------------------------------------
 def grid_figure(frame: dict, step_idx: int) -> go.Figure:
     grid = np.asarray(frame["grid"])
@@ -202,6 +210,11 @@ def main() -> None:
     st.title("🤖 CCE Multi-Agent Exploration — Trajectory Viewer")
     st.caption("Replay a recorded episode: coverage, visited cells, agent paths and communication.")
 
+    # Pre-compute per-frame metric histories once (cached trajectory), so each
+    # slider drag only slices these lists — no disk read, no figure rebuild.
+    coverage_hist: list[float] = []
+    bw_hist: list[float] = []
+
     with st.sidebar:
         st.header("📁 Trajectory")
 
@@ -220,9 +233,9 @@ def main() -> None:
 
         try:
             if uploaded is not None:
-                trajectory = pickle.load(uploaded)
+                trajectory = load_trajectory_file(uploaded)
             else:
-                trajectory = load_trajectory(str(DEFAULT_TRAJECTORY))
+                trajectory = load_trajectory_file(str(DEFAULT_TRAJECTORY))
         except Exception as exc:  # noqa: BLE001
             st.error(f"Could not load trajectory: {exc}")
             st.stop()
@@ -233,6 +246,13 @@ def main() -> None:
 
         n = len(trajectory)
         st.success(f"Loaded {n} frames")
+
+        # Extract metric histories once (cached arrays, cheap slice).
+        coverage_hist = [get_frame(r, i).get("metrics", {}).get("coverage", 0.0)
+                         for i, r in enumerate(trajectory)]
+        bw_hist = [get_frame(r, i).get("metrics", {}).get("bandwidth_used", 0.0)
+                   for i, r in enumerate(trajectory)]
+
         step_idx = st.slider("Timestep", 0, n - 1, 0)
 
         frame = get_frame(trajectory[step_idx], step_idx)
@@ -242,8 +262,17 @@ def main() -> None:
         st.subheader("📊 Current frame")
         st.metric("Coverage", f"{metrics.get('coverage', 0.0):.1%}")
         st.metric("Bandwidth (bits)", f"{metrics.get('bandwidth_used', 0.0):.0f}")
-        if "lam" in metrics:
-            st.metric("λ (coverage/bit)", f"{metrics['lam']:.4f}")
+
+        # Episode-level communication efficiency computed once at episode end.
+        total_bits = bw_hist[-1] if bw_hist else 0.0
+        if total_bits == 0:
+            st.metric("Comm efficiency", "—")
+        else:
+            cov0 = coverage_hist[0] if coverage_hist else 0.0
+            covf = coverage_hist[-1] if coverage_hist else 0.0
+            gain = covf - cov0
+            eff = gain / total_bits
+            st.metric("Comm efficiency", f"{eff:.4f}")
 
         if frame["messages"]:
             st.subheader("📨 Messages")
@@ -262,16 +291,12 @@ def main() -> None:
                    "⭐ agent · ➖ communication link")
 
     with right:
-        coverage_hist = [get_frame(r, i).get("metrics", {}).get("coverage", 0.0)
-                         for i, r in enumerate(trajectory)]
         st.plotly_chart(coverage_figure(coverage_hist, step_idx), use_container_width=True)
 
         st.subheader("Progress")
         st.progress((step_idx + 1) / len(trajectory))
         st.caption(f"Frame {step_idx + 1} of {len(trajectory)}")
 
-        bw_hist = [get_frame(r, i).get("metrics", {}).get("bandwidth_used", 0.0)
-                   for i, r in enumerate(trajectory)]
         if any(b > 0 for b in bw_hist):
             st.plotly_chart(bandwidth_figure(bw_hist, step_idx), use_container_width=True)
 

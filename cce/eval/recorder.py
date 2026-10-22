@@ -45,8 +45,8 @@ class EpisodeStep:
         agent_positions: list of [y, x] for each agent (env coordinate order).
         messages: list of message dicts sent this step, each with keys
             ``sender``, ``receiver``, ``code``, ``utility``.
-        metrics: dict with ``coverage`` (0..1), ``bandwidth_used`` (cumulative
-            bits sent so far) and ``lam`` (coverage / bandwidth efficiency).
+        metrics: dict with ``coverage`` (0..1) and ``bandwidth_used`` (cumulative
+            bits sent so far).
     """
 
     step: int
@@ -165,8 +165,6 @@ class EpisodeRecorder:
         messages = self._messages(send_flags, message_indices)
         self._bandwidth_used += len(messages) * self.dm_bits
 
-        lam = coverage / (self._bandwidth_used + 1e-6)
-
         self.trajectory.append(EpisodeStep(
             step=len(self.trajectory),
             grid=self.grid.copy(),
@@ -176,7 +174,6 @@ class EpisodeRecorder:
             metrics={
                 "coverage": coverage,
                 "bandwidth_used": float(self._bandwidth_used),
-                "lam": float(lam),
             },
         ))
 
