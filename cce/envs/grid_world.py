@@ -132,8 +132,8 @@ class VectorGridWorld:
             # [in_range, rel_dy/R, rel_dx/R, sent_flag] per other agent
             spec["neighbour_feats"] = (self.N - 1, 4)
         if self.cfg.obs_message_embed:
-            # mean-pooled received message embedding + sender count
-            spec["message_embed"] = (self.cfg.message_embed_dim + 1,)
+            # mean-pooled received message embedding + sender count + has_message flag
+            spec["message_embed"] = (self.cfg.message_embed_dim + 2,)
         return spec
 
     @property
@@ -446,9 +446,10 @@ class VectorGridWorld:
             obs["neighbour_feats"] = feats
 
         if self.cfg.obs_message_embed:
-            # Concatenate mean-pooled embedding with sender count
+            # Concatenate mean-pooled embedding with sender count and has_message flag
             n_heard = received_send_flags.sum(axis=2, keepdims=True).astype(np.float32) / N  # (B, N, 1)
-            msg_obs = np.concatenate([received_embeddings, n_heard], axis=2)  # (B, N, d_code+1)
+            has_message = (received_send_flags.sum(axis=2) > 0).astype(np.float32)[..., None]  # (B, N, 1)
+            msg_obs = np.concatenate([received_embeddings, n_heard, has_message], axis=2)  # (B, N, d_code+2)
             obs["message_embed"] = msg_obs.astype(np.float32)
 
         return obs

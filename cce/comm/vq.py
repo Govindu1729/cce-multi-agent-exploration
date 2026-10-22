@@ -144,11 +144,17 @@ class VectorQuantizer(nn.Module):
             avg_probs = one_hot_eval.mean(dim=0)
             perplexity = torch.exp(-torch.sum(avg_probs * torch.log(avg_probs + 1e-10)))
 
+        # Codebook usage entropy to prevent collapse
+        with torch.no_grad():
+            # avg_probs is already computed above
+            usage_entropy = -torch.sum(avg_probs * torch.log(avg_probs + 1e-10))
+
         return {
             "quantised": quantised,
             "indices": indices,
             "loss": self.commitment * commitment_loss,
             "perplexity": perplexity.detach(),
+            "usage_entropy": usage_entropy.detach(),
         }
 
     def _maybe_reset_dead_codes(self, z_sample: torch.Tensor) -> None:

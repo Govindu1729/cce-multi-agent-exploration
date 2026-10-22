@@ -320,6 +320,9 @@ class MAPPO:
             dist, msg_info, _ = self.actor(obs_t, hidden)
             log_probs_new = dist.log_prob(batch["actions_move"], batch["actions_send"])
             entropy = dist.entropy().mean()
+            # Add send-gate entropy bonus to prevent collapse
+            send_entropy = msg_info["send_entropy"].mean()
+            entropy = entropy + send_entropy
 
             # Forward critic on stored states from the batch
             if "state" in batch:

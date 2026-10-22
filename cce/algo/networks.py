@@ -113,6 +113,11 @@ class Actor(nn.Module):
 
         dist = MultiActionDist(move_logits, send_logit)
 
+        # Send-gate entropy bonus to prevent collapse to 0
+        # Binary entropy: H(p) = -p log p - (1-p) log (1-p)
+        p_send = torch.sigmoid(send_logit)  # (...,)
+        entropy_send = -(p_send * torch.log(p_send + 1e-10) + (1 - p_send) * torch.log(1 - p_send + 1e-10))
+
         # Message: quantise h → z → VQ
         z = self.message_encoder(h)  # (..., n_slots, code_dim)
         vq_out = self.vq(z)
@@ -120,7 +125,9 @@ class Actor(nn.Module):
             "message_indices": vq_out["indices"],
             "vq_loss": vq_out["loss"],
             "perplexity": vq_out["perplexity"],
+            "message_embeddings": vq_out["quantised"],
             "message_quantised": vq_out["quantised"],
+            "send_entropy": entropy_send,
         }
 
         return dist, info, hidden_new

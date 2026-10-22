@@ -8,9 +8,9 @@ cd "$(dirname "$0")/.."
 echo "=== Smoke test ==="
 python3 train.py \
     --num_envs 16 \
-    --num_updates 20 \
+    --num_updates 50 \
     --grid_size 10 \
-    --num_agents 2 \
+    --num_agents 4 \
     --fov_size 3 \
     --max_steps 32 \
     --actor_hidden 32 \
