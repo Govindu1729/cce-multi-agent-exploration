@@ -20,41 +20,36 @@ wheels/
 .installed.cfg
 *.egg
 
-# Virtual env
+# Virtual environments
 .venv/
 venv/
 ENV/
+env/
 
 # IDE
-.idea/
 .vscode/
+.idea/
 *.swp
 *.swo
 *~
+
+# Training artifacts
+runs/
+checkpoints/
+*.pt
+*.pth
+*.pkl
+wandb/
+*.log
 
 # OS
 .DS_Store
 Thumbs.db
 
-# Project specific
-wandb/
-runs/*
-checkpoints/
-results/
-logs/
-outputs/
-*.pkl
-*.pth
-*.pt
-!cce/**/*.pt
+# Jupyter
+.ipynb_checkpoints/
 
-# Hydra
-multirun/
-
-# Curated run artifacts (must come after the ignore rules above to override
-# them; only these three file kinds are tracked, everything else under runs/
-# stays ignored).
-!runs/**/
-!runs/**/best_model.pt
-!runs/**/eval_results.json
-!runs/**/trajectory.pkl
+# Misc
+*.pdf
+*.mp4
+*.mov
