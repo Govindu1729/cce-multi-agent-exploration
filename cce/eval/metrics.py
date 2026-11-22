@@ -42,7 +42,8 @@ def compute_episode_metrics(
     # Communication efficiency = coverage / bandwidth
     # bandwidth ~ avg_comm * T
     bandwidth = avg_comm * max_steps
-    comm_efficiency = coverage_mean / (bandwidth + 1e-8)
+    # Fix: avoid division by near-zero when bandwidth == 0
+    comm_efficiency = coverage_mean / bandwidth if bandwidth > 0 else 0.0
 
     return {
         "coverage": float(coverage_mean),

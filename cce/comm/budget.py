@@ -147,10 +147,8 @@ class BudgetController(nn.Module):
 
             if self.mode == "policy":
                 self.lam.add_(delta)
-                # Change this:
-                # self.lam.clamp_(0.0, self.max_lambda)
-                # To this:
-                self.lam.clamp_(min=-1.0, max=self.max_lambda)  # ALLOW SUBSIDY
+                # KKT non-negativity: λ >= 0.0 for inequality constraint (actual_beta <= target_beta)
+                self.lam.clamp_(min=0.0, max=self.max_lambda)
             else:
                 # Utility mode: map lambda to a threshold in [0, 1]
                 self.lam.add_(delta)

@@ -12,11 +12,41 @@ Coordinate convention follows ``cce/envs/grid_world.py``:
 from __future__ import annotations
 
 import numpy as np
+from collections import deque
 
 # Action ids (must match cce/envs/grid_world.ACTION_DELTAS).
 UP, DOWN, LEFT, RIGHT = 0, 1, 2, 3
 _DY = {UP: -1, DOWN: +1, LEFT: 0, RIGHT: 0}
 _DX = {UP: 0, DOWN: 0, LEFT: -1, RIGHT: +1}
+
+
+def _bfs_shortest_action(grid_obstacles, visited_mask, agent_pos, target_cells):
+    """Finds shortest obstacle-free path from agent_pos (r, c) to any cell in target_cells."""
+    H, W = visited_mask.shape
+    sr, sc = int(agent_pos[0]), int(agent_pos[1])
+    target_set = set(map(tuple, target_cells))
+    if (sr, sc) in target_set:
+        target_set.discard((sr, sc))
+    if not target_set:
+        return np.random.randint(0, 4)
+
+    # Standard GridWorld action deltas: 0: up (-1,0), 1: down (+1,0), 2: left (0,-1), 3: right (0,+1)
+    deltas = [(-1, 0, 0), (1, 0, 1), (0, -1, 2), (0, 1, 3)]
+    queue = deque([(sr, sc, -1)])
+    seen = {(sr, sc)}
+
+    while queue:
+        r, c, first_act = queue.popleft()
+        if (r, c) in target_set and first_act != -1:
+            return first_act
+        # Randomize neighbor order slightly to break multi-agent symmetry
+        for dr, dc, act in deltas:
+            nr, nc = r + dr, c + dc
+            if 0 <= nr < H and 0 <= nc < W and (nr, nc) not in seen:
+                if grid_obstacles is None or grid_obstacles[nr, nc] == 0:
+                    seen.add((nr, nc))
+                    queue.append((nr, nc, act if first_act == -1 else first_act))
+    return np.random.randint(0, 4)
 
 
 def _frontier_cells(seen: np.ndarray) -> list[tuple[int, int]]:
@@ -70,35 +100,41 @@ class FrontierBaseline:
         self.dispersion_weight = dispersion_weight
 
     def act(self, batch_index: int = 0) -> np.ndarray:
-        """Return a (1, N) int array of movement actions."""
+        """Return a (1, N) int array of movement actions using global BFS frontier pursuit."""
         env = self.env
         b = batch_index
         positions = [(int(y), int(x)) for y, x in env.agent_pos[b]]
         actions = np.zeros((1, self.N), dtype=np.int64)
 
+        # Use GLOBAL visited map (union of all agents) instead of per-agent local map
+        # This prevents agents from getting stuck when their local FOV has no frontier
+        if hasattr(env, 'visited_global'):
+            global_visited = env.visited_global[b] if env.visited_global.ndim == 4 else env.visited_global
+        else:
+            # Fallback: union of per-agent visited masks
+            global_visited = env.visited_local[b].any(axis=0)
+
+        # Compute global frontier cells (cells adjacent to visited but not yet visited)
+        global_frontiers = _frontier_cells(global_visited)
+
+        if not global_frontiers:
+            # No frontiers anywhere - all cells visited or completely blocked
+            actions[0, :] = UP
+            return actions
+
+        # Get obstacle map if available
+        grid_obstacles = env.grid[b] if hasattr(env, 'grid') else None
+
         for i in range(self.N):
-            seen = env.visited_local[b, i]
-            frontiers = _frontier_cells(seen)
-            if not frontiers:
-                actions[0, i] = UP
-                continue
-
             y, x = positions[i]
-            best, best_score = None, np.inf
-            for (fy, fx) in frontiers:
-                dist = abs(fy - y) + abs(fx - x)
-                penalty = 0.0
-                for j, (oy, ox) in enumerate(positions):
-                    if j == i:
-                        continue
-                    d = abs(oy - fy) + abs(ox - fx)
-                    if d > 0:
-                        penalty += 1.0 / d
-                score = dist + self.dispersion_weight * penalty
-                if score < best_score:
-                    best_score, best = score, (fy, fx)
 
-            actions[0, i] = _step_towards((y, x), best)
+            # Use BFS to find shortest path to nearest frontier
+            actions[0, i] = _bfs_shortest_action(
+                grid_obstacles,
+                global_visited,
+                (y, x),
+                global_frontiers
+            )
 
         return actions
 
