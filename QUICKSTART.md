@@ -1,54 +1,90 @@
 # Quick Start Guide
 
-## Installation (2 minutes)
+## Installation
 
+### Linux / macOS (2 minutes)
 ```bash
-cd /Users/srimaan/Sem7/FAI/Project
+# Clone and enter directory
+cd cce-multi-agent-exploration
 python -m venv .venv
 source .venv/bin/activate
 pip install -e .
 ```
 
-## Run Tests (1 minute)
+### Windows (PowerShell)
+```powershell
+cd cce-multi-agent-exploration
+python -m venv .venv
+.venv\Scripts\Activate.ps1
+pip install -e .
+```
+
+---
+
+## 1. Interactive Web Dashboard (Streamlit)
+
+Launch the trajectory replay viewer and multi-run comparison dashboard:
+```bash
+streamlit run app.py
+```
+Open **`http://localhost:8501`** in your browser.
+
+---
+
+## 2. Run Tests (1 minute)
 
 ```bash
 pytest tests/ -v
 ```
+Or run the dashboard automated self-test:
+```bash
+python test_app.py
+```
 
-## Smoke Test (5 minutes on CPU)
+---
+
+## 3. Smoke Test (5 minutes on CPU)
 
 ```bash
 bash scripts/run_smoke.sh
 ```
-
+Or directly via python:
+```bash
+python train.py --num_envs 16 --num_updates 50 --grid_size 10 --num_agents 4 --fov_size 3 --max_steps 32 --run_dir runs/smoke
+```
 This runs a tiny training job to verify everything works. Check `runs/smoke/eval_results.json` for metrics.
 
-## Full Training (2-4 hours on Kaggle T4)
+---
+
+## 4. Full Training (2-4 hours on Kaggle T4)
 
 ```bash
 bash scripts/run_budget_sweep.sh
 ```
+This trains across $\beta \in \{0, 0.1, 0.25, 0.5, 0.75, 1.0\} \times 5$ seeds. Results in `runs/budget_sweep/` and analysis in `analysis/`.
 
-This trains across β ∈ {0, 0.1, 0.25, 0.5, 0.75, 1.0} × 5 seeds. Results in `runs/budget_sweep/` and analysis in `analysis/`.
+---
 
-## Evaluate a Trained Model
-
-```bash
-python evaluate.py \
-    --run_dir runs/smoke \
-    --num_episodes 50 \
-    --num_envs 16 \
-    --seed 42
-```
-
-## Analyse Results
+## 5. Evaluate Baselines & Trained Models
 
 ```bash
-python analyse.py \
-    --results_dir runs/budget_sweep \
-    --output_dir analysis
+# Evaluate Frontier baseline and record trajectory for Streamlit
+python scripts/evaluate.py --baseline frontier --record --record_output runs/viz/frontier_trajectory.pkl
+
+# Evaluate Random baseline
+python scripts/evaluate.py --baseline random --record --record_output runs/viz/random_trajectory.pkl
+
+# Evaluate a trained MAPPO checkpoint
+python scripts/evaluate.py --baseline mappo --run_dir runs/smoke --checkpoint checkpoints/best_model.pt --num_episodes 10
 ```
 
+---
+
+## 6. Analyse Multi-Run Results
+
+```bash
+python analyse.py --results_dir runs/budget_sweep --output_dir analysis
+```
 Generates Pareto frontier plots and summary tables.
 
 ---
@@ -79,11 +115,12 @@ cce/                          # Main package
     ├── logging.py           # W&B + local logging
     └── seeding.py           # Reproducibility
 
-train.py                      # Main training script
+app.py                        # Streamlit web dashboard
+train.py                      # Main MAPPO training script
 evaluate.py                   # Post-training evaluation
 analyse.py                    # Multi-run analysis
 configs/                      # Hydra YAML configs
-tests/                        # Pytest tests
+tests/                        # Pytest tests (27 unit tests)
 scripts/                      # Shell scripts for experiments
 ```
 
@@ -95,51 +132,33 @@ scripts/                      # Shell scripts for experiments
 - **Vectorised over B parallel envs** (pure NumPy, no IPC overhead)
 - **Fixed-length episodes** (simplifies PPO buffer)
 - **Local visited masks** (no global info leakage to agents)
-- **Manhattan-distance communication** (agents within range R=3 can communicate)
+- **Manhattan-distance communication** (agents within range $R=3$ can communicate)
 
 ### MAPPO
 - **Shared actor** across homogeneous agents
 - **Centralised critic** with CNN over global state (3-channel image + positions)
-- **GAE** with λ=0.95, value normalisation (PopArt-lite)
+- **GAE** with $\lambda=0.95$, value normalisation (PopArt-lite)
 - **Supports MLP or GRU** backbones (GRU for partial observability)
 
 ### Communication
 - **VQ bottleneck** with EMA codebook updates and dead-code revival
-- **Messages** = d_m discrete codes from codebook of size K (default: 4 codes × 16 codebook = 16 bits)
+- **Messages** = $d_m$ discrete codes from codebook of size $K$ (default: 4 codes $\times$ 16 codebook = 16 bits)
 - **Budget control** via Lagrangian dual with PID controller
 - **Two modes**: policy (send decision sampled) or utility (deterministic threshold)
 
 ### Budget Mechanism
-- **Normalised cost**: C_comm_t = (n_send_t * d_m) / (N * d_m^max)
-- **Target**: mean(C_comm_t) ≤ β over episode
-- **Enforcement**: PID controller adjusts λ (policy mode) or τ (utility mode)
+- **Normalised cost**: $C_{\text{comm}, t} = \frac{n_{\text{send}, t} \cdot d_m}{N \cdot d_m^{\max}}$
+- **Target**: $\text{mean}(C_{\text{comm}, t}) \le \beta$ over episode
+- **Enforcement**: PID controller adjusts $\lambda$ (policy mode) or $\tau$ (utility mode)
 - **Hard cutoff**: silence when budget exhausted
-
----
-
-## Hyperparameters (from paper Table 2)
-
-| Parameter | Value | Location |
-|-----------|-------|----------|
-| Actor LR | 3e-4 | `--lr_actor` |
-| Critic LR | 1e-3 | `--lr_critic` |
-| γ | 0.99 | `--gamma` |
-| GAE λ | 0.95 | `--gae_lambda` |
-| PPO clip ε | 0.2 | `--clip_eps` |
-| Entropy coef | 0.01 | `--entropy_coef` |
-| Hidden dim (MLP) | 64 | `--actor_hidden` |
-| Hidden dim (GRU) | 128 | `--gru_hidden` |
-| Codebook size K | 16 | `--n_codes` |
-| Code dim | 8 | `--code_dim` |
-| Message slots d_m | 4 | `--n_slots` |
 
 ---
 
 ## Running on Kaggle (Recommended for Long Runs)
 
-1. Zip the project: `cd /Users/srimaan/Sem7/FAI/Project && zip -r cce_project.zip .`
-2. Upload to Kaggle as a dataset
-3. Create a notebook, attach the dataset, install dependencies:
+1. Zip the project repository: `zip -r cce_project.zip . -x "*.pyc" "__pycache__/*" ".venv/*"`
+2. Upload to Kaggle as a dataset.
+3. Create a notebook, attach the dataset, and install dependencies:
    ```python
    !pip install -e /kaggle/input/cce_project/cce_project
    ```
@@ -167,25 +186,3 @@ scripts/                      # Shell scripts for experiments
 
 **"VQ perplexity stays low (codebook collapse)"**
 → Reduce `--n_codes` (e.g., 8 instead of 16) or increase `--entropy_coef` (e.g., 0.05).
-
----
-
-## Next Steps for Srimaan
-
-1. **Run the smoke test** to verify installation
-2. **Read the code** (start with `cce/envs/grid_world.py`, then `cce/algo/mappo.py`)
-3. **Run a short training** (100 updates) on your local machine
-4. **Inspect W&B logs** to see learning curves
-5. **Tune hyperparameters** if needed (start with `--entropy_coef` and `--lr_actor`)
-6. **Run the full β-sweep** on Kaggle (2-4 hours)
-7. **Analyse results** with `analyse.py` and generate plots for the paper
-
----
-
-## Contact
-
-Questions about the code? Ask ChatGPT (this project was built with extensive AI assistance). Key modules to reference:
-- **VQ bottleneck**: `cce/comm/vq.py` (lines 1-180)
-- **Budget controller**: `cce/comm/budget.py` (lines 1-100)
-- **MAPPO update**: `cce/algo/mappo.py` (lines 200-350)
-- **Environment step**: `cce/envs/grid_world.py` (lines 150-280)

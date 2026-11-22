@@ -1,0 +1,17 @@
+{
+  "coverage": 1.0,
+  "coverage_std": 0.0,
+  "t95": 19.0,
+  "t95_std": 0.0,
+  "success_rate": 1.0,
+  "avg_comm_cost": 0.0,
+  "bandwidth": 0.0,
+  "avg_reward": 0.3289795172313461,
+  "exploration_rate": 0.0078125,
+  "comm_efficiency": 0.0,
+  "overlap": 0.6530612244897959,
+  "overlap_std": 0.0,
+  "bandwidth_bits": 0.0,
+  "bandwidth_bits_std": 0.0,
+  "num_episodes": 1
+}

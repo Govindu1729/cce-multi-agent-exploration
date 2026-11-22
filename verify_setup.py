@@ -10,7 +10,7 @@ try:
     import torch
     print(f"✓ PyTorch {torch.__version__}")
     print(f"  CUDA available: {torch.cuda.is_available()}")
-    if torch.backends.mps.is_available():
+    if hasattr(torch.backends, "mps") and torch.backends.mps.is_available():
         print(f"  MPS available: True (Apple Silicon)")
 except ImportError:
     print("✗ PyTorch not installed")
@@ -26,6 +26,18 @@ try:
     print(f"✓ Gymnasium {gymnasium.__version__}")
 except ImportError:
     print("✗ Gymnasium not installed")
+
+try:
+    import streamlit as st
+    print(f"✓ Streamlit {st.__version__}")
+except ImportError:
+    print("✗ Streamlit not installed")
+
+try:
+    import plotly
+    print(f"✓ Plotly {plotly.__version__}")
+except ImportError:
+    print("✗ Plotly not installed")
 
 # Test project imports
 try:
@@ -52,4 +64,10 @@ try:
 except ImportError as e:
     print(f"✗ cce.comm.budget: {e}")
 
-print("\n✓ All checks passed! Ready to train.")
+try:
+    from cce.baselines.frontier import FrontierBaseline
+    print("✓ cce.baselines.frontier")
+except ImportError as e:
+    print(f"✗ cce.baselines.frontier: {e}")
+
+print("\n✓ All checks passed! Ready to train, evaluate, and view dashboard.")
