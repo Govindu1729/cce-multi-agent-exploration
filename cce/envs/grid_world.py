@@ -48,11 +48,11 @@ class GridWorldConfig:
     silence_embed_dim: int = 0            # if >0, add a learned "silence" embedding
 
     # Reward shaping
-    w_coverage: float = 1.0
-    w_overlap: float = 0.1
-    w_time: float = 0.01
-    w_comm: float = 0.05
-    success_bonus: float = 2.0
+    w_coverage: float = 10.0
+    w_overlap: float = 0.0
+    w_time: float = 0.0
+    w_comm: float = 0.0
+    success_bonus: float = 5.0
     success_threshold: float = 0.95
     wall_bump_penalty: float = 0.0        # small penalty for bumping wall/agent
 

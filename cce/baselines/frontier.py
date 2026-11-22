@@ -123,7 +123,7 @@ class FrontierBaseline:
             return actions
 
         # Get obstacle map if available
-        grid_obstacles = env.grid[b] if hasattr(env, 'grid') else None
+        grid_obstacles = env.maps[b] if hasattr(env, 'maps') else None
 
         for i in range(self.N):
             y, x = positions[i]
