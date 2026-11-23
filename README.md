@@ -56,16 +56,22 @@ All models and baselines were evaluated over **20 held-out episodes** (seed `42`
 ### Result Visualizations
 
 #### 1. Four-Panel Evaluation Summary
-![Four-Panel Evaluation Summary](paper_figures.png)
+![Four-Panel Evaluation Summary](assets/paper_figures.png)
 
 #### 2. Training Dynamics & KKT Dual Convergence (300 PPO Updates)
-![Training Dynamics](fig2_training_dynamics.png)
+![Training Dynamics](assets/fig2_training_dynamics.png)
 
 #### 3. Pareto Frontier, Kneedle Knee ($\beta^*=0.75$), and Policy Comparison
-![Pareto and Knee Analysis](fig3_pareto_kneedle.png)
+![Pareto and Knee Analysis](assets/fig3_pareto_kneedle.png)
 
 #### 4. Spatial Coverage & Multi-Agent Overlap Heatmaps ($20 \times 20$ Grid)
-![Spatial Overlap Heatmaps](fig4_trajectories_heatmaps.png)
+![Spatial Overlap Heatmaps](assets/fig4_trajectories_heatmaps.png)
+
+---
+
+## Project Reports
+- [Team 37 Project Idea Review](reports/Team_37_Project_Idea_Review.pdf) — Initial project proposal and literature review.
+- [Team 37 Final Report](reports/Team_37_Final_Report.pdf) — Complete experimental results, analysis, and conclusions (to be added after final evaluation).
 
 ---
 
