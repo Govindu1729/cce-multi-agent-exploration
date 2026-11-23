@@ -57,7 +57,7 @@ All models and baselines were evaluated over **20 held-out episodes** (seed `42`
 
 | Document / Artifact | Path |
 | :--- | :--- |
-| **End-Term Final Report (8-Page PDF)** | [`reports/Team_37_Final_Report.pdf`](reports/Team_37_Final_Report.pdf) |
+| **End-Term Final Report (8-Page PDF)** | [`reports/Team_37_Final_Report.pdf`](reports/FAI_FINAL_PROJECT.pdf) |
 | **Mid-Term Project Idea Review (PDF)** | [`reports/Team_37_Project_Idea_Review.pdf`](reports/Team_37_Project_Idea_Review.pdf) |
 | **Standardized Evaluation Output (JSON)** | [`results/eval_results.json`](results/eval_results.json) |
 | **Kaggle Evaluation & Plotting Notebook** | [`notebooks/fai-project.ipynb`](notebooks/fai-project.ipynb) |
@@ -66,7 +66,7 @@ All models and baselines were evaluated over **20 held-out episodes** (seed `42`
 
 ## Project Reports
 - [Team 37 Project Idea Review](reports/Team_37_Project_Idea_Review.pdf) — Initial project proposal and literature review.
-- [Team 37 Final Report](reports/Team_37_Final_Report.pdf) — Complete experimental results, analysis, and conclusions (to be added after final evaluation).
+- [Team 37 Final Report](reports/FAI_FINAL_PROJECT.pdf) — Complete experimental results, analysis, and conclusions (to be added after final evaluation).
 
 ---
 
