@@ -109,7 +109,7 @@ class FrontierBaseline:
         # Use GLOBAL visited map (union of all agents) instead of per-agent local map
         # This prevents agents from getting stuck when their local FOV has no frontier
         if hasattr(env, 'visited_global'):
-            global_visited = env.visited_global[b] if env.visited_global.ndim == 4 else env.visited_global
+            global_visited = env.visited_global[b] if env.visited_global.ndim >= 3 else env.visited_global
         else:
             # Fallback: union of per-agent visited masks
             global_visited = env.visited_local[b].any(axis=0)
@@ -122,8 +122,13 @@ class FrontierBaseline:
             actions[0, :] = UP
             return actions
 
-        # Get obstacle map if available
-        grid_obstacles = env.maps[b] if hasattr(env, 'maps') else None
+        # Get obstacle map if available (VectorGridWorld stores obstacles in env.maps)
+        if hasattr(env, 'maps'):
+            grid_obstacles = env.maps[b] if env.maps.ndim >= 3 else env.maps
+        elif hasattr(env, 'grid'):
+            grid_obstacles = env.grid[b] if env.grid.ndim >= 3 else env.grid
+        else:
+            grid_obstacles = None
 
         for i in range(self.N):
             y, x = positions[i]
