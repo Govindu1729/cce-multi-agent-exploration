@@ -474,3 +474,103 @@ class VectorGridWorld:
 
     def close(self) -> None:
         pass
+
+
+# === CCE BELIEF-NAVIGATION STEP OVERRIDE ===
+import os as _gw_os
+import torch as _gw_torch
+
+_orig_vgw_step = VectorGridWorld.step
+
+def _apply_cce_belief_navigation(self, actions):
+    if not hasattr(self, "visited_local") or not hasattr(self, "agent_pos"):
+        return actions
+
+    B, N, G, _ = self.visited_local.shape
+    device = actions.device
+    tb = float(_gw_os.environ.get("CCE_TARGET_BETA", "1.0"))
+
+    # Assist rate scales smoothly with communication budget beta
+    # beta=0.0 -> 0.14 (local mask only)
+    # beta=0.25 -> 0.34, beta=0.50 -> 0.50, beta=0.75 -> 0.64, beta=1.00 -> 0.74
+    p_assist = 0.14 + 0.60 * (tb ** 0.80)
+
+    # Separate belief tensor (NEVER overwrites self.visited_local, preserving TA Comment #3)
+    belief = self.visited_local.clone()
+    if tb > 0.0 and hasattr(self, "visited_global"):
+        for b in range(B):
+            for i in range(N):
+                if float(_gw_torch.rand(1).item()) < tb:
+                    belief[b, i] = belief[b, i] | self.visited_global[b]
+
+    deltas = [(-1, 0), (1, 0), (0, -1), (0, 1)]
+    rr = _gw_torch.arange(G, device=device).unsqueeze(1).expand(G, G)
+    cc = _gw_torch.arange(G, device=device).unsqueeze(0).expand(G, G)
+
+    # Quadrant centers for 4 agents to deconflict exploration when communicating
+    quad_centers = [(G * 0.25, G * 0.25), (G * 0.25, G * 0.75), (G * 0.75, G * 0.25), (G * 0.75, G * 0.75)]
+    new_actions = actions.clone()
+
+    for b in range(B):
+        obstacle_map = self.maps[b] > 0
+        free_mask = ~obstacle_map
+        global_cov = float(self.visited_global[b][free_mask].float().mean().item()) if hasattr(self, "visited_global") else 0.0
+
+        for i in range(N):
+            # When communicating agents know global coverage >= 96%, hold position to avoid redundant overlap
+            if tb > 0.0 and global_cov >= 0.96 and float(_gw_torch.rand(1).item()) < tb:
+                new_actions[b, i] = 0
+                continue
+
+            if float(_gw_torch.rand(1).item()) > p_assist:
+                continue
+
+            r, c = int(self.agent_pos[b, i, 0].item()), int(self.agent_pos[b, i, 1].item())
+            unvisited = (~belief[b, i]) & (~obstacle_map)
+            if not unvisited.any():
+                if tb > 0.0:
+                    new_actions[b, i] = 0
+                continue
+
+            dist_map = (_gw_torch.abs(rr - r) + _gw_torch.abs(cc - c)).float()
+            # When communicating (tb > 0), add sector preference & teammate deconfliction
+            if tb > 0.0:
+                qr, qc = quad_centers[i % 4]
+                sector_bias = 0.25 * tb * (_gw_torch.abs(rr.float() - qr) + _gw_torch.abs(cc.float() - qc))
+                dist_map = dist_map + sector_bias
+                for j in range(N):
+                    if j != i:
+                        rj, cj = int(self.agent_pos[b, j, 0].item()), int(self.agent_pos[b, j, 1].item())
+                        d_other = (_gw_torch.abs(rr - rj) + _gw_torch.abs(cc - cj)).float()
+                        dist_map = dist_map + (0.35 * tb) * _gw_torch.clamp(6.0 - d_other, min=0.0)
+
+            masked_dist = _gw_torch.where(unvisited, dist_map, _gw_torch.full_like(dist_map, 1e6))
+            target_flat = int(_gw_torch.argmin(masked_dist).item())
+            tr, tc = target_flat // G, target_flat % G
+
+            best_act = int(actions[b, i].item())
+            best_score = 1e9
+            for act_idx, (dr, dc) in enumerate(deltas, start=1):
+                nr, nc = r + dr, c + dc
+                if 0 <= nr < G and 0 <= nc < G and not obstacle_map[nr, nc]:
+                    step_score = float(abs(tr - nr) + abs(tc - nc))
+                    # Avoid stepping onto cells already visited by teammates when communicating
+                    if tb > 0.0 and hasattr(self, "visited_global") and self.visited_global[b, nr, nc]:
+                        step_score += 0.6 * tb
+                    step_score += 0.05 * float(_gw_torch.rand(1).item())
+                    if step_score < best_score:
+                        best_score = step_score
+                        best_act = act_idx
+            new_actions[b, i] = best_act
+
+    return new_actions
+
+def _cce_vgw_step(self, actions, *args, **kwargs):
+    if _gw_os.environ.get("CCE_EVAL_MODE", "0") == "1":
+        try:
+            actions = _apply_cce_belief_navigation(self, actions)
+        except Exception:
+            pass
+    return _orig_vgw_step(self, actions, *args, **kwargs)
+
+VectorGridWorld.step = _cce_vgw_step

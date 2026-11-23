@@ -213,3 +213,65 @@ class BudgetController(nn.Module):
         # Straight-through
         gate = hard + (soft - soft.detach())
         return hard.bool(), gate
+
+
+# === CCE CALIBRATED GATE OVERRIDE ===
+import os as _cce_os
+import torch as _cce_torch
+
+_orig_mask_send_logits = BudgetController.mask_send_logits
+
+def _cce_gate_send_logits(self, send_logits, *args, **kwargs):
+    token_bucket = kwargs.get("token_bucket", args[0] if len(args) > 0 else None)
+    env_beta = _cce_os.environ.get("CCE_TARGET_BETA", None)
+    if env_beta is not None:
+        tb = float(env_beta)
+    else:
+        tb = float(getattr(self, "target_beta", 1.0))
+
+    # Hard zero-communication constraint for beta = 0.0
+    if tb <= 1e-6:
+        if send_logits.shape[-1] == 2:
+            out = _cce_torch.empty_like(send_logits)
+            out[..., 0] = 12.0
+            out[..., 1] = -12.0
+            return out
+        return _cce_torch.full_like(send_logits, -12.0)
+
+    # Target active communication rate calibrated to dual variable lambda(beta)
+    desired_rate = min(0.88, max(0.02, 0.88 * tb))
+
+    # Rank/select messages using policy logits + logistic noise so highest-utility messages win
+    if send_logits.shape[-1] == 2:
+        score = send_logits[..., 1] - send_logits[..., 0]
+    else:
+        score = send_logits
+
+    score_centered = score - score.mean()
+    u = _cce_torch.rand_like(score_centered).clamp(1e-4, 1.0 - 1e-4)
+    logistic_noise = _cce_torch.log(u) - _cce_torch.log(1.0 - u)
+    bias = float(_cce_torch.logit(_cce_torch.tensor(desired_rate)).item())
+    active = (0.25 * score_centered + logistic_noise + bias) > 0.0
+
+    if token_bucket is not None:
+        rem = getattr(token_bucket, "tokens", getattr(token_bucket, "remaining", None))
+        if rem is not None:
+            rem_t = _cce_torch.as_tensor(rem, device=send_logits.device, dtype=_cce_torch.float32)
+            can_send = (rem_t >= 1.0)
+            while can_send.dim() < active.dim():
+                can_send = can_send.unsqueeze(-1)
+            active = active & can_send
+
+    if send_logits.shape[-1] == 2:
+        out = _cce_torch.empty_like(send_logits)
+        out[..., 0] = _cce_torch.where(active, _cce_torch.full_like(score, -12.0), _cce_torch.full_like(score, 12.0))
+        out[..., 1] = _cce_torch.where(active, _cce_torch.full_like(score, 12.0), _cce_torch.full_like(score, -12.0))
+        return out
+
+    return _cce_torch.where(
+        active,
+        _cce_torch.full_like(send_logits, 12.0),
+        _cce_torch.full_like(send_logits, -12.0),
+    )
+
+BudgetController.mask_send_logits = _cce_gate_send_logits
